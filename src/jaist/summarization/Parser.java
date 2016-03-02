@@ -51,7 +51,7 @@ public class Parser {
     static int DEFAULT_MAXIMUM_SENTENCE = 10;
     static double DEFAULT_ALTERNATIVE_VP_THRESHOLD = 0.75;
     static int DEFAULT_MAX_WORD_LENGTH = 100;
-    static int MIN_SENTENCE_LENGTH = 3;
+    static int MIN_SENTENCE_LENGTH = 5;
 
     int max_sentence = 10;
     double alternative_vp_threshold = 0.75;
@@ -397,10 +397,8 @@ public class Parser {
                 }
             }
 
-            if (flag){
-                nounConstraint.addTerm(-1.0, nounVariable);
-                model.addConstr(nounConstraint, GRB.GREATER_EQUAL, 0.0, "np_validity:" + noun.getId());
-            }
+            nounConstraint.addTerm(-1.0, nounVariable);
+            model.addConstr(nounConstraint, GRB.GREATER_EQUAL, 0.0, "np_validity:" + noun.getId());
         }
     }
 

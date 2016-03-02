@@ -91,7 +91,7 @@ public class PhraseExtractor {
     }
 
     private static List<Phrase> extractPhrasesFromSentence(CoreMap sentence){
-        int sentenceLength = sentence.toString().length();
+        int sentenceLength = countWords(sentence.toString());
 
         List<Phrase> phrases = new ArrayList<Phrase>();
 
@@ -99,7 +99,6 @@ public class PhraseExtractor {
 
         // ignore the root node
         tree = tree.children()[0];
-
         phrases.addAll(extractSentenceNode(tree, sentenceLength));
 
         return phrases;
@@ -112,6 +111,11 @@ public class PhraseExtractor {
         List<Phrase> tempPhrases = new ArrayList<>();
         for (Tree child : rootNode.children()) {
             String nodeValue = child.value();
+
+            if (nodeValue.equals("S")){
+                phrases.addAll(extractSentenceNode(child, countWords(getPhrase(child))));
+                continue;
+            }
 
             if (nodeValue.equals("NP") || nodeValue.equals("VP") || nodeValue.equals("S") || nodeValue.equals("SBAR")) {
                 Boolean isNP = !nodeValue.equals("VP");
@@ -175,6 +179,9 @@ public class PhraseExtractor {
         return phrases;
     }
 
+    private static int countWords(String text){
+        return text.split("[\\W]").length;
+    }
 
     public static void main(String[] args) throws Exception {
         String parserModel = "edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz";
@@ -186,15 +193,15 @@ public class PhraseExtractor {
         CommandLine cmd = commandLineParser.parse(options, args);
 
         String filePath = cmd.getOptionValue("in");
-        File file = new File(filePath);
+        //File file = new File(filePath);
         //String text = IOUtils.slurpFile(file);
-        String text = "Searches for the missing continued, and some decomposed bodies, once found, were being buried in common graves.";
+        String text = "The returns _ an even break in the Senate and a Democratic gain of five in the House of Representatives _ also made the impeachment of President Clinton less likely. And the better shape Clinton is in as his term ends, the better chance Gore, his sidekick for six years now, stands in the presidential nomination process and, ultimately, the election.";
 
-        Tree t = lp.parse(text);
-        t.pennPrint();
+//        Tree t = lp.parse(text);
+//        t.pennPrint();
 
         Properties props = new Properties();
-        props.put("annotators", "tokenize, ssplit, parse");
+        props.put("annotators", "tokenize, ssplit, parse, pos, lemma, ner, dcoref");
 
         StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
 
@@ -203,19 +210,12 @@ public class PhraseExtractor {
         //StanfordCoreNLP pipeline = AnnotatorHub.getInstance().getPipeline();
         pipeline.annotate(document);
 
-        List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
-        for (CoreMap sentence: sentences){
-            Tree tree = sentence.get(TreeCoreAnnotations.TreeAnnotation.class);
-            tree.pennPrint();
+        PhraseMatrix indicatorMatrix = new PhraseMatrix();
+        List<Phrase> phrases = extractPhrases(document, indicatorMatrix);
+
+        for (Phrase p: phrases){
+            System.out.println(p.toString());
         }
-
-
-//        PhraseMatrix indicatorMatrix = new PhraseMatrix();
-//        List<Phrase> phrases = extractPhrases(document, indicatorMatrix);
-//
-//        for (Phrase p: phrases){
-//            System.out.println(p.toString());
-//        }
 
     }
 
