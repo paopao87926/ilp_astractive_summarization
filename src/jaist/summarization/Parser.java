@@ -287,14 +287,14 @@ public class Parser {
 
         addNPValidityConstraint(model);
         addVPValidityConstraint(model);
-//        addNotIWithinIConstraint(model, nounPhrases, nounVariables);
+        addNotIWithinIConstraint(model, nounPhrases, nounVariables);
         addNotIWithinIConstraint(model, verbPhrases, verbVariables);
-//        addPhraseCooccurrenceConstraint(model, nounPhrases, nounVariables, nounToNounVariables);
-//        addPhraseCooccurrenceConstraint(model, verbPhrases, verbVariables, verbToVerbVariables);
+        addPhraseCooccurrenceConstraint(model, nounPhrases, nounVariables, nounToNounVariables);
+        addPhraseCooccurrenceConstraint(model, verbPhrases, verbVariables, verbToVerbVariables);
         addSentenceNumberConstraint(model, nounPhrases, nounVariables, this.max_sentence);
         addShortSentenceAvoidanceConstraint(model, verbPhrases, verbVariables, MIN_SENTENCE_LENGTH);
         addPronounAvoidanceConstraint(model, nounPhrases, nounVariables);
-        //addLengthConstraint(model, nounPhrases, verbPhrases, nounVariables, verbVariables);
+        addLengthConstraint(model, nounPhrases, verbPhrases, nounVariables, verbVariables);
 
         markTime("finish building model for optimization");
 
@@ -325,6 +325,8 @@ public class Parser {
 
         HashMap<Integer, List<Phrase>> selectedNP = new HashMap<>();
 
+        Map<Integer, String> summarySentences = new TreeMap<>();
+
         for (String key: gammaVariables.keySet()){
             GRBVar var = gammaVariables.get(key);
 
@@ -346,13 +348,22 @@ public class Parser {
         String summary = "";
 
         for (List<Phrase> phrases: selectedNP.values()){
+            String sentence = "";
+            Integer minID = Integer.MAX_VALUE;
             for(Phrase p: phrases){
-                summary += p.getContent() + " ";
+                if (!p.isNP() && minID > p.getId()){
+                    minID = p.getId();
+                }
+                sentence += p.getContent() + " ";
                 System.out.println(p.getContent() + " " + (p.isNP() ? "NP(" : "VP(") + p.getId() + ") ");
             }
-            summary += "\n";
+            summarySentences.put(minID, sentence);
 
             System.out.println();
+        }
+
+        for (Map.Entry<Integer, String> entry: summarySentences.entrySet()){
+            summary += entry.getValue() + "\n";
         }
 
         return summary;
@@ -665,10 +676,12 @@ public class Parser {
                 }
             }
 
-            for (int i = 0; i < alternativePhrases.size() - 1; i++) {
-                for (int j = i + 1; j < alternativePhrases.size(); j++) {
-                    Phrase a = verbPhrases.get(i);
-                    Phrase b = verbPhrases.get(j);
+            int len = alternativePhrases.size();
+
+            for (int i = 0; i < len - 1; i++) {
+                for (int j = i + 1; j < len; j++) {
+                    Phrase a = alternativePhrases.get(i);
+                    Phrase b = alternativePhrases.get(j);
                     alternativeNPs.setValue(a, b, 1);
                     alternativeNPs.setValue(b, a, 1);
                 }
