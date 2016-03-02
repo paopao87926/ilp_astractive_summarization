@@ -1,0 +1,12 @@
+!classes/.gitignore
+*.pyc
+*.swp
+*.swo
+*.o
+*.so
+.DS_Store
+.settings/**
+*.log
+.idea/**
+out/**
+*.iml
