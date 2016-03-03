@@ -28,7 +28,7 @@ public class Parser {
     PhraseMatrix compatibilityMatrix = null;
     Integer[][] similarityMatrix = null;
     Integer[][] sentenceGenerationMatrix = null;
-    List<Annotation> docs = null;
+    List<Document> docs = null;
 
     PhraseMatrix alternativeVPs = null;
     PhraseMatrix alternativeNPs = null;
@@ -87,7 +87,7 @@ public class Parser {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.println("Start at: " + System.nanoTime());
+        System.out.println("Start at: " + System.currentTimeMillis());
         Options options = new Options();
 
         options.addOption("help", false, "print command usage");
@@ -142,7 +142,7 @@ public class Parser {
 
             Parser parser = new Parser(sentence_length, vp_threshold, word_length);
 
-            System.out.println("Stanford CoreNLP loaded at" + System.nanoTime());
+            System.out.println("Stanford CoreNLP loaded at " + System.currentTimeMillis());
 
             for (File filepath: fileNames){
                 if (filepath.getName().startsWith(".")) continue;
@@ -232,7 +232,7 @@ public class Parser {
 
         markTime("building model for optimization");
         for(Phrase noun:nounPhrases){
-            GRBVar var = model.addVar(0.0, 1.0, 0.0, GRB.BINARY, "n:" + noun.getId());
+            GRBVar var = model.addVar(0.0, 1.0, 1.0, GRB.BINARY, "n:" + noun.getId());
             nounVariables.put(noun.getId(), var);
 
             expr.addTerm(noun.getScore(), var);
@@ -240,7 +240,7 @@ public class Parser {
             for (Phrase verb: verbPhrases){
                 if (compatibilityMatrix.getValue(noun, verb).equals(1)){
                     String key = "gamma:" + buildVariableKey(noun, verb);
-                    GRBVar gamma = model.addVar(0.0, 1.0, 0.0, GRB.BINARY, key);
+                    GRBVar gamma = model.addVar(0.0, 1.0, 1.0, GRB.BINARY, key);
 
                     gammaVariables.put(key, gamma);
                 }
@@ -248,7 +248,7 @@ public class Parser {
         }
 
         for (Phrase verb:verbPhrases){
-            GRBVar var = model.addVar(0.0, 1.0, 0.0, GRB.BINARY, "v:" + verb.getId());
+            GRBVar var = model.addVar(0.0, 1.0, 1.0, GRB.BINARY, "v:" + verb.getId());
             verbVariables.put(verb.getId(), var);
 
             expr.addTerm(verb.getScore(), var);
@@ -260,7 +260,7 @@ public class Parser {
                 Phrase noun2 = nounPhrases.get(j);
                 String key = buildVariableKey(noun1, noun2);
 
-                GRBVar var = model.addVar(0.0, 1.0, 0.0, GRB.BINARY, "n2n:" + key);
+                GRBVar var = model.addVar(0.0, 1.0, 1.0, GRB.BINARY, "n2n:" + key);
                 nounToNounVariables.put(key, var);
                 Double score = -(noun1.getScore() + noun2.getScore()) * calculateSimilarity(noun1, noun2);
                 expr.addTerm(score, var);
@@ -273,7 +273,7 @@ public class Parser {
                 Phrase verb2 = verbPhrases.get(j);
                 String key = buildVariableKey(verb1, verb2);
 
-                GRBVar var = model.addVar(0.0, 1.0, 0.0, GRB.BINARY, "v2v:" + key);
+                GRBVar var = model.addVar(0.0, 1.0, 1.0, GRB.BINARY, "v2v:" + key);
                 verbToVerbVariables.put(key, var);
 
                 expr.addTerm(-(verb1.getScore() + verb2.getScore()) * calculateSimilarity(verb1, verb2), var);
@@ -291,10 +291,10 @@ public class Parser {
         addNotIWithinIConstraint(model, verbPhrases, verbVariables);
         addPhraseCooccurrenceConstraint(model, nounPhrases, nounVariables, nounToNounVariables);
         addPhraseCooccurrenceConstraint(model, verbPhrases, verbVariables, verbToVerbVariables);
-        addSentenceNumberConstraint(model, nounPhrases, nounVariables, this.max_sentence);
-        addShortSentenceAvoidanceConstraint(model, verbPhrases, verbVariables, MIN_SENTENCE_LENGTH);
-        addPronounAvoidanceConstraint(model, nounPhrases, nounVariables);
-        addLengthConstraint(model, nounPhrases, verbPhrases, nounVariables, verbVariables);
+        addSentenceNumberConstraint(model, this.max_sentence);
+        addShortSentenceAvoidanceConstraint(model, MIN_SENTENCE_LENGTH);
+        addPronounAvoidanceConstraint(model);
+        addLengthConstraint(model);
 
         markTime("finish building model for optimization");
 
@@ -377,12 +377,8 @@ public class Parser {
             GRBVar nounVariable = nounVariables.get(noun.getId());
             GRBLinExpr nounConstraint = new GRBLinExpr();
 
-            boolean flag = false;
-
             for (Phrase verb : verbPhrases){
                 if (compatibilityMatrix.getValue(noun, verb).equals(1)){
-                    flag = true;
-
                     String key = "gamma:" + buildVariableKey(noun, verb);
                     GRBVar var = gammaVariables.get(key);
 
@@ -408,10 +404,9 @@ public class Parser {
             GRBVar verbVar = verbVariables.get(verb.getId());
             GRBLinExpr constr = new GRBLinExpr();
             constr.addTerm(-1.0, verbVar);
-            boolean flag = false;
+
             for (Phrase noun: nounPhrases){
                 if (compatibilityMatrix.getValue(noun, verb).equals(1)){
-                    flag = true;
                     String key = "gamma:" + buildVariableKey(noun, verb);
                     GRBVar var = gammaVariables.get(key);
 
@@ -419,9 +414,7 @@ public class Parser {
                 }
             }
 
-            if (flag) {
-                model.addConstr(constr, GRB.EQUAL, 0.0, "vp_legality:" + verb.getId());
-            }
+            model.addConstr(constr, GRB.EQUAL, 0.0, "vp_legality:" + verb.getId());
         }
     }
 
@@ -432,8 +425,7 @@ public class Parser {
             for (int j=i+1; j<phrases.size(); j++){
                 Phrase phrase1 = phrases.get(i);
                 Phrase phrase2 = phrases.get(j);
-                if (phrase1.getId() == phrase2.getParentId()){
-
+                if (phrase1.getId().equals(phrase2.getParentId())){
                     GRBVar var1 = variables.get(phrase1.getId());
                     GRBVar var2 = variables.get(phrase2.getId());
 
@@ -484,26 +476,21 @@ public class Parser {
         }
     }
 
-    private void addSentenceNumberConstraint(GRBModel model,
-                                             List<Phrase> nounPhrases,
-                                             HashMap<Integer, GRBVar> variables, int K) throws GRBException{
+    private void addSentenceNumberConstraint(GRBModel model, int K) throws GRBException{
         GRBLinExpr expr = new GRBLinExpr();
 
         for (Phrase phrase: nounPhrases){
-            GRBVar var = variables.get(phrase.getId());
+            GRBVar var = nounVariables.get(phrase.getId());
             expr.addTerm(1.0, var);
         }
 
         model.addConstr(expr, GRB.LESS_EQUAL, K, "sentence_number");
     }
 
-    private void addShortSentenceAvoidanceConstraint(GRBModel model,
-                                                     List<Phrase> verbPhrases,
-                                                     HashMap<Integer, GRBVar> variables,
-                                                     int M) throws GRBException {
+    private void addShortSentenceAvoidanceConstraint(GRBModel model, int M) throws GRBException {
         for(Phrase phrase: verbPhrases){
             if (phrase.getSentenceLength() < M){
-                GRBVar var = variables.get(phrase.getId());
+                GRBVar var = verbVariables.get(phrase.getId());
                 GRBLinExpr expr = new GRBLinExpr();
                 expr.addTerm(1.0, var);
 
@@ -512,12 +499,10 @@ public class Parser {
         }
     }
 
-    private void addPronounAvoidanceConstraint(GRBModel model,
-                                               List<Phrase> nounPhrases,
-                                               HashMap<Integer, GRBVar> variables) throws GRBException{
+    private void addPronounAvoidanceConstraint(GRBModel model) throws GRBException{
         for (Phrase phrase: nounPhrases){
             if (phrase.isPronoun()){
-                GRBVar var = variables.get(phrase.getId());
+                GRBVar var = nounVariables.get(phrase.getId());
                 GRBLinExpr expr = new GRBLinExpr();
                 expr.addTerm(1.0, var);
                 model.addConstr(expr, GRB.EQUAL, 0.0, "pronoun_avoidance:" + phrase.getId());
@@ -525,11 +510,7 @@ public class Parser {
         }
     }
 
-    private void addLengthConstraint(GRBModel model,
-                                     List<Phrase> nounPhrases,
-                                     List<Phrase> verbPhrases,
-                                     HashMap<Integer, GRBVar> nounVariables,
-                                     HashMap<Integer, GRBVar> verbVariables) throws GRBException{
+    private void addLengthConstraint(GRBModel model) throws GRBException{
         GRBLinExpr expr = new GRBLinExpr();
 
         for (Phrase phrase: nounPhrases){
@@ -560,17 +541,14 @@ public class Parser {
     }
 
     public void processDocument(String text) {
-        Annotation document = new Annotation(text);
-        this.pipeline.annotate(document);
+        Document document = new Document(text);
         this.docs.add(document);
-
         extractPhrases(document);
-        extractCoreferences(document);
-        extractNamedEntities(document);
     }
 
-    public void extractPhrases(Annotation document){
-        List<Phrase> phrases = PhraseExtractor.extractPhrases(document, indicatorMatrix);
+    public void extractPhrases(Document document){
+        PhraseExtractor extractor = new PhraseExtractor(document, indicatorMatrix);
+        List<Phrase> phrases = extractor.extractAllPhrases();
 
         for (Phrase phrase : phrases) {
             if (phrase.isNP()) {
@@ -586,7 +564,7 @@ public class Parser {
 
     public void scorePhrases(){
         int count = 0;
-        for(Annotation doc: this.docs){
+        for(Document doc: this.docs){
             log("Scoring phrases againsts the doc_id " + count);
             PhraseScorer phraseScorer = new PhraseScorer(doc);
             for (Phrase phrase: allPhrases){
@@ -705,8 +683,8 @@ public class Parser {
     }
 
     private double calculateJaccardIndex(Phrase a, Phrase b) {
-        HashSet<String> conceptsInA = a.getConcepts();
-        HashSet<String> conceptsInB = b.getConcepts();
+        Set<String> conceptsInA = a.getConcepts();
+        Set<String> conceptsInB = b.getConcepts();
 
         int count = 0;
         Double finalScore = 0.0d;
@@ -717,7 +695,7 @@ public class Parser {
             }
         }
 
-        finalScore = (double) count / (conceptsInA.size() + conceptsInB.size());
+        finalScore = (double) count / (conceptsInA.size() + conceptsInB.size() - count);
         if (finalScore.isNaN()){
             return 0.0;
         }
@@ -750,58 +728,24 @@ public class Parser {
         System.out.println(new Timestamp(System.currentTimeMillis()) + ": " + text);
     }
 
-    private void extractCoreferences(Annotation document) {
-        Map<Integer, edu.stanford.nlp.hcoref.data.CorefChain> corefChains = document.get(edu.stanford.nlp.hcoref.CorefCoreAnnotations.CorefChainAnnotation.class);
-
-        for (edu.stanford.nlp.hcoref.data.CorefChain c : corefChains.values()) {
-
-            edu.stanford.nlp.hcoref.data.CorefChain.CorefMention representative = c.getRepresentativeMention();
-            String key = representative.mentionSpan;
-
-            if (c.getMentionsInTextualOrder().size() == 1) {
-                continue;
-            }
-
-            if (!corefs.containsKey(key)){
-                corefs.put(key, new HashSet<String>());
-                corefs.get(key).add(key);
-            }
-
-            for (edu.stanford.nlp.hcoref.data.CorefChain.CorefMention m : c.getMentionsInTextualOrder()) {
-                if (m == representative) {
-                    continue;
-                }
-
-                //ignore if the mention is not in list of NPs extracted
-                if (!nouns.contains(m.mentionSpan)){
-                    continue;
-                }
-
-                if (!corefs.get(key).contains(m.mentionSpan)){
-                    corefs.get(key).add(m.mentionSpan);
-                }
-            }
-        }
-    }
-
     public void removeRedundantCorefs(){
         Iterator<Map.Entry<String, HashSet<String>>> iter = corefs.entrySet().iterator();
 
         while(iter.hasNext()){
             Map.Entry<String, HashSet<String>> entry = iter.next();
-
-            if (entry.getValue().size() < 2){
-                iter.remove();
+            Set<String> mentions = entry.getValue();
+            HashSet<String> newMentions = new HashSet<>(mentions);
+            for(String mention: mentions){
+                if (!nouns.contains(mention)){
+                    newMentions.remove(mention);
+                }
             }
-        }
-    }
 
-    private void extractNamedEntities(Annotation document) {
-        AnnotatorHub.getInstance().getEntityMentionsAnnotator().annotate(document);
-
-        for (CoreMap mention : document.get(CoreAnnotations.MentionsAnnotation.class)) {
-            String ner = mention.get(CoreAnnotations.TextAnnotation.class);
-            namedEntities.add(ner);
+            if (newMentions.size() < 2){
+                iter.remove();
+            }else{
+                entry.setValue(newMentions);
+            }
         }
     }
 }

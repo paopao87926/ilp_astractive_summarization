@@ -16,33 +16,15 @@ import java.util.*;
  * Created by chientran on 9/29/15.
  */
 public class PhraseScorer {
-    Annotation document = null;
-
-    ArrayList<Paragraph> paragraphs = null;
+    Document document = null;
 
     Double B = 6.0;
     Double RHO = 0.5d;
 
     private static final String PARAGRAPH_SPLIT_REGEX = "(?m)(?=^\\s{4})";
 
-    public PhraseScorer(Annotation document){
+    public PhraseScorer(Document document){
         this.document = document;
-        paragraphs = new ArrayList<>();
-
-        separateDocumentIntoParagraphs();
-    }
-
-    private void separateDocumentIntoParagraphs(){
-        String text = this.document.toString();
-
-        String[] paragraphTexts = text.split(PARAGRAPH_SPLIT_REGEX);
-
-        for (String paragraphText: paragraphTexts){
-            Paragraph paragraph = new Paragraph(paragraphText);
-
-            paragraphs.add(paragraph);
-        }
-
     }
 
     private Double weightingParagraph(Integer paragraphPosition){
@@ -55,9 +37,12 @@ public class PhraseScorer {
 
     public Double scorePhrase(Phrase phrase){
         Double score = 0.0d;
-        HashSet<String> concepts = phrase.getConcepts();
+        Set<String> concepts = phrase.getConcepts();
+        List<Paragraph> paragraphs = document.getParagraphs();
+        int paragraphLength = paragraphs.size();
+
         for(String concept: concepts){
-            for (int i=0; i<paragraphs.size(); i++){
+            for (int i=0; i<paragraphLength; i++){
                 Integer count = paragraphs.get(i).countFrequency(concept);
                 score += count * weightingParagraph(i);
             }

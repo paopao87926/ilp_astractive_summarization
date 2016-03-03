@@ -9,11 +9,9 @@ import edu.stanford.nlp.util.Pair;
 import intoxicant.analytics.coreNlp.StopwordAnnotator;
 import jaist.summarization.AnnotatorHub;
 import jaist.summarization.StopwordRemover;
+import jaist.summarization.utils.StringUtils;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
+import java.util.*;
 
 /**
  * Created by chientran on 9/29/15.
@@ -31,7 +29,7 @@ public class Phrase {
     private static int _vpID = 0;
     private static String[] pronouns = {"it", "i", "you", "he", "they", "we", "she", "who", "them", "me", "him", "one", "her", "us", "something", "nothing", "anything", "himself", "everything", "someone", "themselves", "everyone", "itself", "anyone", "myself"};
 
-    private HashSet<String> concepts = null;
+    private Set<String> concepts = null;
 
     public Phrase(String content, Boolean isNP){
         this.content = content;
@@ -74,6 +72,10 @@ public class Phrase {
 
     public Integer getId(){ return this.id; }
 
+    public void setConcepts(Set<String> concepts){
+        this.concepts = concepts;
+    }
+
     public void generateConcepts(){
         if (concepts != null) return;
 
@@ -109,7 +111,7 @@ public class Phrase {
             concepts.add(ner);
         }
     }
-    public HashSet<String> getConcepts(){
+    public Set<String> getConcepts(){
         if (concepts == null){
             generateConcepts();
         }
@@ -127,7 +129,7 @@ public class Phrase {
     }
 
     public int getWordLength(){
-        return this.content.split("[\\W]").length;
+        return StringUtils.countWords(this.content);
     }
 
     public boolean equals(String phrase){
@@ -135,7 +137,10 @@ public class Phrase {
     }
 
     public static void main(String[] args){
-        Phrase p = new Phrase("This is just a test.", false);
+        String t = "This is my question; what   _ yeah";
+        Phrase p = new Phrase(t, false);
         System.out.println(p.getWordLength());
+
+        System.out.println(Arrays.toString(t.split("\\W+")));
     }
 }

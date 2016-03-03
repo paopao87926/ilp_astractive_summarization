@@ -1,7 +1,9 @@
 package jaist.summarization.phrase;
 
+import com.sun.deploy.util.OrderedHashSet;
 import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.HasWord;
 import edu.stanford.nlp.parser.common.ParserGrammar;
 import edu.stanford.nlp.parser.lexparser.FactoredParser;
@@ -15,10 +17,9 @@ import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.trees.TreeCoreAnnotations;
 import edu.stanford.nlp.trees.TreebankLanguagePack;
 import edu.stanford.nlp.util.CoreMap;
-import jaist.summarization.AnnotatorHub;
-import jaist.summarization.PhraseMatrix;
-import jaist.summarization.PhraseUpdater;
+import jaist.summarization.*;
 import jaist.summarization.unit.Phrase;
+import jaist.summarization.utils.StringUtils;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -32,11 +33,20 @@ import java.util.*;
 public class PhraseExtractor {
     private static String PARSER_MODEL = "edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz";
     private static Integer sentenceId = 0;
+    private Document document;
+    private PhraseMatrix indicatorMatrix;
+    private HashSet<String> namedEntities;
 
-    public static List<Phrase> extractPhrases(Annotation document, PhraseMatrix indicatorMatrix) {
+
+    public PhraseExtractor(Document document, PhraseMatrix indicatorMatrix){
+        this.document = document;
+        this.indicatorMatrix = indicatorMatrix;
+    }
+
+    public List<Phrase> extractAllPhrases() {
         List<Phrase> allPhrases = new ArrayList<>();
 
-        List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
+        List<CoreMap> sentences = document.getSentences();
         List<Thread> threads = new ArrayList<>();
 
         for (CoreMap sentence : sentences) {
@@ -58,7 +68,7 @@ public class PhraseExtractor {
     }
 
     //Use this if we want a seperate LexicializedParser instead of ParserAnnotation
-    private static List<Phrase> extractPhrasesWithLexicalParser(String text){
+    private List<Phrase> extractPhrasesWithLexicalParser(String text){
         LexicalizedParser lexicalizedParser = LexicalizedParser.loadModel(PARSER_MODEL);
         List<Phrase> allPhrases = new ArrayList<>();
 
@@ -74,7 +84,7 @@ public class PhraseExtractor {
         return allPhrases;
     }
 
-    private static String getPhrase(Tree tree) {
+    private String getPhrase(Tree tree) {
         List<String> words = new ArrayList<String>();
         List<Tree> leaves = tree.getLeaves();
         for (Tree leaf : leaves) {
@@ -84,14 +94,14 @@ public class PhraseExtractor {
         return String.join(" ", words);
     }
 
-    private static Integer getSentenceID() {
+    private Integer getSentenceID() {
         sentenceId += 1;
 
         return sentenceId;
     }
 
-    private static List<Phrase> extractPhrasesFromSentence(CoreMap sentence){
-        int sentenceLength = countWords(sentence.toString());
+    private List<Phrase> extractPhrasesFromSentence(CoreMap sentence){
+        int sentenceLength = StringUtils.countWords(sentence.toString());
 
         List<Phrase> phrases = new ArrayList<Phrase>();
 
@@ -104,7 +114,7 @@ public class PhraseExtractor {
         return phrases;
     }
 
-    private static List<Phrase> extractSentenceNode(Tree rootNode, Integer sentenceLength){
+    private List<Phrase> extractSentenceNode(Tree rootNode, Integer sentenceLength){
         List<Phrase> phrases = new ArrayList<Phrase>();
 
         int s_length = 0;
@@ -112,18 +122,17 @@ public class PhraseExtractor {
         for (Tree child : rootNode.children()) {
             String nodeValue = child.value();
 
-            if (nodeValue.equals("S")){
-                phrases.addAll(extractSentenceNode(child, countWords(getPhrase(child))));
-                continue;
-            }
+//            if (nodeValue.equals("S")){
+//                phrases.addAll(extractSentenceNode(child, StringUtils.countWords(getPhrase(child))));
+//                continue;
+//            }
 
             if (nodeValue.equals("NP") || nodeValue.equals("VP") || nodeValue.equals("S") || nodeValue.equals("SBAR")) {
                 Boolean isNP = !nodeValue.equals("VP");
 
                 String phraseContent = getPhrase(child);
 
-
-                Phrase phrase = new Phrase(phraseContent, isNP);
+                Phrase phrase = buildPhrase(phraseContent, isNP, -1);
                 phrase.setSentenceLength(sentenceLength);
 
                 if (nodeValue.equals("NP") || nodeValue.equals("VP")){
@@ -165,7 +174,8 @@ public class PhraseExtractor {
 
                     if (subchildValue.equals(nodeValue) || (isNP && (subchildValue.equals("S") || subchildValue.equals
                             ("SBAR")))){
-                        Phrase subPhrase = new Phrase(getPhrase(subChild), isNP, phrase.getId());
+
+                        Phrase subPhrase = buildPhrase(getPhrase(subChild), isNP, phrase.getId());
                         subPhrase.setSentenceLength(sentenceLength);
                         phrases.add(subPhrase);
                     }
@@ -179,8 +189,13 @@ public class PhraseExtractor {
         return phrases;
     }
 
-    private static int countWords(String text){
-        return text.split("[\\W]").length;
+    private Phrase buildPhrase(String content, boolean isNP, int parentID){
+        Set<String> concepts = document.extractConceptsFromString(content).keySet();
+
+        Phrase p = new Phrase(content, isNP, parentID);
+        p.setConcepts(concepts);
+
+        return p;
     }
 
     public static void main(String[] args) throws Exception {
@@ -195,28 +210,16 @@ public class PhraseExtractor {
         String filePath = cmd.getOptionValue("in");
         //File file = new File(filePath);
         //String text = IOUtils.slurpFile(file);
-        String text = "The returns _ an even break in the Senate and a Democratic gain of five in the House of Representatives _ also made the impeachment of President Clinton less likely. And the better shape Clinton is in as his term ends, the better chance Gore, his sidekick for six years now, stands in the presidential nomination process and, ultimately, the election.";
+        String text = "And the better shape Clinton is in as his term ends, the better chance Gore, his sidekick for six years now, stands in the presidential nomination process and, ultimately, the election.";
 
-//        Tree t = lp.parse(text);
-//        t.pennPrint();
-
-        Properties props = new Properties();
-        props.put("annotators", "tokenize, ssplit, parse, pos, lemma, ner, dcoref");
-
-        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
-
-        Annotation document = new Annotation(text);
-
-        //StanfordCoreNLP pipeline = AnnotatorHub.getInstance().getPipeline();
-        pipeline.annotate(document);
+        Document doc = new Document(text);
 
         PhraseMatrix indicatorMatrix = new PhraseMatrix();
-        List<Phrase> phrases = extractPhrases(document, indicatorMatrix);
+        List<Phrase> phrases = new PhraseExtractor(doc, indicatorMatrix).extractAllPhrases();
 
         for (Phrase p: phrases){
             System.out.println(p.toString());
         }
-
     }
 
 }
