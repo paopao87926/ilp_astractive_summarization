@@ -21,6 +21,7 @@ public class Phrase {
     Boolean isNP = true;
     Double score = 0.0d;
     Integer parentId = -1;
+    Integer sentenceNodeId = 0;
     int id;
 
     int sentenceLength = 0;
@@ -44,8 +45,13 @@ public class Phrase {
     }
 
     public Phrase(String content, Boolean isNP, Integer parentId){
+        this(content, isNP, parentId, 0);
+    }
+
+    public Phrase(String content, Boolean isNP, Integer parentId, Integer sentenceNodeId){
         this(content, isNP);
         this.parentId = parentId;
+        this.sentenceNodeId = sentenceNodeId;
     }
 
     public String getContent(){ return this.content; }
@@ -135,6 +141,8 @@ public class Phrase {
     public boolean equals(String phrase){
         return this.content.equals(phrase);
     }
+
+    public int getSentenceNodeId(){ return sentenceNodeId; }
 
     public static void main(String[] args){
         String t = "This is my question; what   _ yeah";

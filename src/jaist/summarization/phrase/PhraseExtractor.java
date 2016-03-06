@@ -57,7 +57,7 @@ public class PhraseExtractor {
                 for (int j=i+1; j<phrasesInSentence.size(); j++){
                     Phrase a = phrasesInSentence.get(i);
                     Phrase b = phrasesInSentence.get(j);
-                    if (a.isNP() && !b.isNP()){
+                    if (a.isNP() && !b.isNP() && a.getSentenceNodeId() == b.getSentenceNodeId()){
                         indicatorMatrix.setValue(a, b, 1);
                     }
                 }
@@ -119,20 +119,16 @@ public class PhraseExtractor {
 
         int s_length = 0;
         List<Phrase> tempPhrases = new ArrayList<>();
+        int sentenceNodeID = 0;
         for (Tree child : rootNode.children()) {
             String nodeValue = child.value();
-
-//            if (nodeValue.equals("S")){
-//                phrases.addAll(extractSentenceNode(child, StringUtils.countWords(getPhrase(child))));
-//                continue;
-//            }
-
+            
             if (nodeValue.equals("NP") || nodeValue.equals("VP") || nodeValue.equals("S") || nodeValue.equals("SBAR")) {
                 Boolean isNP = !nodeValue.equals("VP");
 
                 String phraseContent = getPhrase(child);
 
-                Phrase phrase = buildPhrase(phraseContent, isNP, -1);
+                Phrase phrase = buildPhrase(phraseContent, isNP, -1, 0);
                 phrase.setSentenceLength(sentenceLength);
 
                 if (nodeValue.equals("NP") || nodeValue.equals("VP")){
@@ -169,13 +165,15 @@ public class PhraseExtractor {
                     }
                 }
 
+                if (nodeValue.equals("S") || nodeValue.equals("SBAR")){
+                    sentenceNodeID += 1;
+                }
+
                 for (Tree subChild: child.children()){
                     String subchildValue = subChild.value();
 
-                    if (subchildValue.equals(nodeValue) || (isNP && (subchildValue.equals("S") || subchildValue.equals
-                            ("SBAR")))){
-
-                        Phrase subPhrase = buildPhrase(getPhrase(subChild), isNP, phrase.getId());
+                    if ((isNP && subchildValue.equals("NP")) || (!isNP && subchildValue.equals("VP"))){
+                        Phrase subPhrase = buildPhrase(getPhrase(subChild), isNP, phrase.getId(), sentenceNodeID);
                         subPhrase.setSentenceLength(sentenceLength);
                         phrases.add(subPhrase);
                     }
@@ -189,10 +187,10 @@ public class PhraseExtractor {
         return phrases;
     }
 
-    private Phrase buildPhrase(String content, boolean isNP, int parentID){
+    private Phrase buildPhrase(String content, boolean isNP, int parentID, int sentenceNodeID){
         Set<String> concepts = document.extractConceptsFromString(content).keySet();
 
-        Phrase p = new Phrase(content, isNP, parentID);
+        Phrase p = new Phrase(content, isNP, parentID, sentenceNodeID);
         p.setConcepts(concepts);
 
         return p;

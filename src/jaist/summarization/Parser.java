@@ -52,12 +52,20 @@ public class Parser {
     static double DEFAULT_ALTERNATIVE_VP_THRESHOLD = 0.75;
     static int DEFAULT_MAX_WORD_LENGTH = 100;
     static int MIN_SENTENCE_LENGTH = 5;
+    static int MINIMUM_VERB_LENGTH = 2;
 
     int max_sentence = 10;
     double alternative_vp_threshold = 0.75;
     int max_word_length = 100;
 
+    int threads = 0;
+
     long previousMarkedTime;
+
+    public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length, int threads){
+        this(max_sentence, alternative_vp_threshold, max_word_length);
+        this.threads = threads;
+    }
 
     public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length) {
         this.max_sentence = max_sentence;
@@ -96,6 +104,7 @@ public class Parser {
         options.addOption("max_sent", true, "maximum # of sentences");
         options.addOption("in", true, "input folder containing all text files");
         options.addOption("out", true, "Output file");
+        options.addOption("threads", true, "Number of threads");
 
         CommandLineParser commandLineParser = new DefaultParser();
         CommandLine cmd = commandLineParser.parse(options, args);
@@ -127,6 +136,11 @@ public class Parser {
             outputFile = cmd.getOptionValue("out");
         }
 
+        int threads = 0;
+        if (cmd.hasOption("threads")){
+            threads = Integer.parseInt(cmd.getOptionValue("threads"));
+        }
+
         String[] folders = cmd.getOptionValue("in").split(",");
 
         for (String folderName: folders){
@@ -140,7 +154,7 @@ public class Parser {
                 fileNames = folder.listFiles();
             }
 
-            Parser parser = new Parser(sentence_length, vp_threshold, word_length);
+            Parser parser = new Parser(sentence_length, vp_threshold, word_length, threads);
 
             System.out.println("Stanford CoreNLP loaded at " + System.currentTimeMillis());
 
@@ -220,6 +234,10 @@ public class Parser {
         log("Start building optimization model");
         GRBEnv env = new GRBEnv("mip.log");
         GRBModel model = new GRBModel(env);
+
+        //Note: more threads mean you need more memory
+        model.getEnv().set(GRB.IntParam.Threads, threads);
+
         //model.getEnv().set(GRB.IntParam.OutputFlag, 0);
 
         GRBLinExpr expr = new GRBLinExpr();
@@ -489,7 +507,7 @@ public class Parser {
 
     private void addShortSentenceAvoidanceConstraint(GRBModel model, int M) throws GRBException {
         for(Phrase phrase: verbPhrases){
-            if (phrase.getSentenceLength() < M){
+            if (phrase.getSentenceLength() < M || phrase.getWordLength() < MINIMUM_VERB_LENGTH){
                 GRBVar var = verbVariables.get(phrase.getId());
                 GRBLinExpr expr = new GRBLinExpr();
                 expr.addTerm(1.0, var);
