@@ -22,7 +22,7 @@ public class AnnotatorHub {
     protected AnnotatorHub(){
         Properties props = new Properties();
         try {
-            String propFilename = "config.properties";
+            String propFilename = "resources/config.properties";
 
             InputStream inputStream = getClass().getClassLoader().getResourceAsStream(propFilename);
 
