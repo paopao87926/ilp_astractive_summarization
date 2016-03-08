@@ -6,6 +6,7 @@ import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.pipeline.*;
 import edu.stanford.nlp.util.CoreMap;
+import edu.stanford.nlp.util.StringUtils;
 import jaist.summarization.phrase.PhraseExtractor;
 import jaist.summarization.unit.Phrase;
 
@@ -94,6 +95,11 @@ public class Parser {
         this(DEFAULT_MAXIMUM_SENTENCE, DEFAULT_ALTERNATIVE_VP_THRESHOLD, DEFAULT_MAX_WORD_LENGTH);
     }
 
+    public Parser(int max_words){
+        this();
+        this.max_word_length = max_words;
+    }
+
     public static void main(String[] args) throws Exception {
         System.out.println("Start at: " + System.currentTimeMillis());
         Options options = new Options();
@@ -163,20 +169,13 @@ public class Parser {
                 System.out.println(filepath.getAbsolutePath());
 
                 File file = new File(filepath.getAbsolutePath());
-                String text = IOUtils.slurpFile(file);
-                //String text = "John was walking on the street. He saw a girl. Mary met John. She was very beautiful. She wanted to be his girl friend.";
+                //String text = IOUtils.slurpFile(file);
+                String text = "John was walking on the street. He saw a pretty girl. Mary met John. She was very beautiful. She wanted to be his girl friend.";
                 parser.processDocument(text);
             }
 
-            System.out.println("Start scoring at " + System.currentTimeMillis());
-            parser.scorePhrases();
-            System.out.println("Finish scoring at " + System.currentTimeMillis());
+            String summary = parser.generateSummary();
 
-            parser.removeRedundantCorefs();
-
-            //parser.printLog();
-
-            String summary = parser.findOptimalSolution();
 
             PrintWriter out = null;
             try {
@@ -189,6 +188,18 @@ public class Parser {
             }
         }
 
+    }
+
+    public String generateSummary(){
+        System.out.println("Start scoring at " + System.currentTimeMillis());
+        scorePhrases();
+        System.out.println("Finish scoring at " + System.currentTimeMillis());
+
+        removeRedundantCorefs();
+
+        printLog();
+
+        return findOptimalSolution();
     }
 
     private void buildCompatibilityMatrix() {
@@ -356,7 +367,6 @@ public class Parser {
 
                 if (!selectedNP.keySet().contains(nounId)){
                     selectedNP.put(nounId, new ArrayList<Phrase>());
-                    selectedNP.get(nounId).add(selectedNouns.get(nounId));
                 }
 
                 selectedNP.get(nounId).add(selectedVerbs.get(verbId));
@@ -365,19 +375,27 @@ public class Parser {
 
         String summary = "";
 
-        for (List<Phrase> phrases: selectedNP.values()){
-            String sentence = "";
+        for (Integer key: selectedNP.keySet()){
+            Phrase nounPhrase = selectedNouns.get(key);
+            List<Phrase> phrases = selectedNP.get(key);
+            String sentence = nounPhrase.getContent() + " ";
             Integer minID = Integer.MAX_VALUE;
+
+            List<String> verbs = new ArrayList<>();
+
+            Collections.sort(phrases, (a, b) -> a.getId().compareTo(b.getId()));
+
             for(Phrase p: phrases){
                 if (!p.isNP() && minID > p.getId()){
                     minID = p.getId();
                 }
-                sentence += p.getContent() + " ";
-                System.out.println(p.getContent() + " " + (p.isNP() ? "NP(" : "VP(") + p.getId() + ") ");
+                verbs.add(p.getContent());
             }
+
+            sentence += StringUtils.join(verbs, ", ");
             summarySentences.put(minID, sentence);
 
-            System.out.println();
+            System.out.println(sentence);
         }
 
         for (Map.Entry<Integer, String> entry: summarySentences.entrySet()){
@@ -562,6 +580,7 @@ public class Parser {
         Document document = new Document(text);
         this.docs.add(document);
         extractPhrases(document);
+        this.corefs.putAll(document.getCoreferences());
     }
 
     public void extractPhrases(Document document){
