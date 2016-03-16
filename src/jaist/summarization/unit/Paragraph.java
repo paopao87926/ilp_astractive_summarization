@@ -25,6 +25,9 @@ public class Paragraph {
         this.conceptsToFrequency = conceptsToFrequency;
     }
 
+    public Set<String> getConcepts(){
+        return conceptsToFrequency.keySet();
+    }
     public Integer countFrequency(String concept){
         if (conceptsToFrequency.containsKey(concept)){
             return conceptsToFrequency.get(concept);

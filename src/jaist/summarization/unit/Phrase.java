@@ -16,7 +16,7 @@ import java.util.*;
 /**
  * Created by chientran on 9/29/15.
  */
-public class Phrase {
+public class Phrase{
     String content = null;
     Boolean isNP = true;
     Double score = 0.0d;
@@ -134,7 +134,7 @@ public class Phrase {
         return isNP() && Arrays.asList(pronouns).contains(this.content.toLowerCase());
     }
 
-    public int getWordLength(){
+    public Integer getWordLength(){
         return StringUtils.countWords(this.content);
     }
 

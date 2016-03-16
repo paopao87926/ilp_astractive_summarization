@@ -1,21 +1,10 @@
 package jaist.summarization.phrase;
 
-import com.sun.deploy.util.OrderedHashSet;
-import edu.stanford.nlp.io.IOUtils;
-import edu.stanford.nlp.ling.CoreAnnotations;
-import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.HasWord;
-import edu.stanford.nlp.parser.common.ParserGrammar;
-import edu.stanford.nlp.parser.lexparser.FactoredParser;
 import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
-import edu.stanford.nlp.pipeline.Annotation;
-import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.process.DocumentPreprocessor;
-import edu.stanford.nlp.process.Tokenizer;
-import edu.stanford.nlp.trees.GrammaticalStructureFactory;
 import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.trees.TreeCoreAnnotations;
-import edu.stanford.nlp.trees.TreebankLanguagePack;
 import edu.stanford.nlp.util.CoreMap;
 import jaist.summarization.*;
 import jaist.summarization.unit.Phrase;
@@ -25,7 +14,6 @@ import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
 
-import java.io.File;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.*;
@@ -33,20 +21,20 @@ import java.util.*;
 public class PhraseExtractor {
     private static String PARSER_MODEL = "edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz";
     private static Integer sentenceId = 0;
-    private Document document;
+    private InputDocument inputDocument;
     private PhraseMatrix indicatorMatrix;
     private HashSet<String> namedEntities;
 
 
-    public PhraseExtractor(Document document, PhraseMatrix indicatorMatrix){
-        this.document = document;
+    public PhraseExtractor(InputDocument inputDocument, PhraseMatrix indicatorMatrix){
+        this.inputDocument = inputDocument;
         this.indicatorMatrix = indicatorMatrix;
     }
 
     public List<Phrase> extractAllPhrases() {
         List<Phrase> allPhrases = new ArrayList<>();
 
-        List<CoreMap> sentences = document.getSentences();
+        List<CoreMap> sentences = inputDocument.getSentences();
         List<Thread> threads = new ArrayList<>();
 
         for (CoreMap sentence : sentences) {
@@ -122,7 +110,7 @@ public class PhraseExtractor {
         int sentenceNodeID = 0;
         for (Tree child : rootNode.children()) {
             String nodeValue = child.value();
-            
+
             if (nodeValue.equals("NP") || nodeValue.equals("VP") || nodeValue.equals("S") || nodeValue.equals("SBAR")) {
                 Boolean isNP = !nodeValue.equals("VP");
 
@@ -188,7 +176,7 @@ public class PhraseExtractor {
     }
 
     private Phrase buildPhrase(String content, boolean isNP, int parentID, int sentenceNodeID){
-        Set<String> concepts = document.extractConceptsFromString(content).keySet();
+        Set<String> concepts = inputDocument.extractConceptsFromString(content).keySet();
 
         Phrase p = new Phrase(content, isNP, parentID, sentenceNodeID);
         p.setConcepts(concepts);
@@ -210,7 +198,7 @@ public class PhraseExtractor {
         //String text = IOUtils.slurpFile(file);
         String text = "And the better shape Clinton is in as his term ends, the better chance Gore, his sidekick for six years now, stands in the presidential nomination process and, ultimately, the election.";
 
-        Document doc = new Document(text);
+        InputDocument doc = new InputDocument(text);
 
         PhraseMatrix indicatorMatrix = new PhraseMatrix();
         List<Phrase> phrases = new PhraseExtractor(doc, indicatorMatrix).extractAllPhrases();

@@ -1,11 +1,7 @@
 package jaist.summarization;
 
-import edu.stanford.nlp.dcoref.CorefChain;
-import edu.stanford.nlp.dcoref.CorefCoreAnnotations;
 import edu.stanford.nlp.io.IOUtils;
-import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.pipeline.*;
-import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.StringUtils;
 import jaist.summarization.phrase.PhraseExtractor;
 import jaist.summarization.unit.Phrase;
@@ -16,6 +12,7 @@ import java.io.PrintWriter;
 import java.sql.Timestamp;
 import java.util.*;
 import gurobi.*;
+import jaist.summarization.utils.ModelExporter;
 import org.apache.commons.cli.*;
 
 /**
@@ -29,12 +26,11 @@ public class Parser {
     PhraseMatrix compatibilityMatrix = null;
     Integer[][] similarityMatrix = null;
     Integer[][] sentenceGenerationMatrix = null;
-    List<Document> docs = null;
+    List<InputDocument> docs = null;
 
     PhraseMatrix alternativeVPs = null;
     PhraseMatrix alternativeNPs = null;
     HashMap<String, HashSet<String>> corefs = null;
-    HashSet<String> namedEntities = new HashSet<>();
 
     List<Phrase> nounPhrases;
     List<Phrase> verbPhrases;
@@ -48,6 +44,8 @@ public class Parser {
 
     HashSet<String> nouns;
     HashSet<String> verbs;
+
+    DocumentProcessor processor;
 
     static int DEFAULT_MAXIMUM_SENTENCE = 10;
     static double DEFAULT_ALTERNATIVE_VP_THRESHOLD = 0.75;
@@ -63,12 +61,12 @@ public class Parser {
 
     long previousMarkedTime;
 
-    public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length, int threads){
-        this(max_sentence, alternative_vp_threshold, max_word_length);
+    public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length, int threads, boolean isDucData){
+        this(max_sentence, alternative_vp_threshold, max_word_length, isDucData);
         this.threads = threads;
     }
 
-    public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length) {
+    public Parser(int max_sentence, double alternative_vp_threshold, int max_word_length, boolean isDucData) {
         this.max_sentence = max_sentence;
         this.alternative_vp_threshold = alternative_vp_threshold;
         this.max_word_length = max_word_length;
@@ -89,10 +87,12 @@ public class Parser {
         verbs = new HashSet<>();
 
         docs = new ArrayList<>();
+
+        processor = new DocumentProcessor(isDucData, indicatorMatrix);
     }
 
     public Parser(){
-        this(DEFAULT_MAXIMUM_SENTENCE, DEFAULT_ALTERNATIVE_VP_THRESHOLD, DEFAULT_MAX_WORD_LENGTH);
+        this(DEFAULT_MAXIMUM_SENTENCE, DEFAULT_ALTERNATIVE_VP_THRESHOLD, DEFAULT_MAX_WORD_LENGTH, false);
     }
 
     public Parser(int max_words){
@@ -111,6 +111,8 @@ public class Parser {
         options.addOption("in", true, "input folder containing all text files");
         options.addOption("out", true, "Output file");
         options.addOption("threads", true, "Number of threads");
+        options.addOption("duc", false, "Is DUC data");
+        options.addOption("export_only", false, "Should we find the solution or just export the phrases?");
 
         CommandLineParser commandLineParser = new DefaultParser();
         CommandLine cmd = commandLineParser.parse(options, args);
@@ -137,49 +139,60 @@ public class Parser {
             vp_threshold = Double.parseDouble(cmd.getOptionValue("vp_threshold"));
         }
 
-        String outputFile = "sample.txt";
-        if (cmd.hasOption("out")){
-            outputFile = cmd.getOptionValue("out");
-        }
-
         int threads = 0;
         if (cmd.hasOption("threads")){
             threads = Integer.parseInt(cmd.getOptionValue("threads"));
         }
 
+        boolean isDucData = cmd.hasOption("duc");
+        boolean isExportOnly = cmd.hasOption("export_only");
+
         String[] folders = cmd.getOptionValue("in").split(",");
 
         for (String folderName: folders){
             File folder = new File(folderName);
+
+            String outputFilename = folder.getName();
+
             File[] fileNames = null;
 
-            if (!folder.isDirectory()){
+            if (folder.isDirectory()){
+                fileNames = folder.listFiles();
+            }else{
+                outputFilename = folder.getParent().substring(folder.getParent().lastIndexOf("/")+1);
                 System.out.println("Single document summarization. For multi-doc summarization, please specify a folder");
                 fileNames = new File[]{folder};
-            }else{
-                fileNames = folder.listFiles();
             }
 
-            Parser parser = new Parser(sentence_length, vp_threshold, word_length, threads);
-
+            Parser parser = new Parser(sentence_length, vp_threshold, word_length, threads, isDucData);
             System.out.println("Stanford CoreNLP loaded at " + System.currentTimeMillis());
-
             for (File filepath: fileNames){
                 if (filepath.getName().startsWith(".")) continue;
                 System.out.println(filepath.getAbsolutePath());
 
-                File file = new File(filepath.getAbsolutePath());
-                //String text = IOUtils.slurpFile(file);
-                String text = "John was walking on the street. He saw a pretty girl. Mary met John. She was very beautiful. She wanted to be his girl friend.";
+                String text = IOUtils.slurpFile(filepath);
                 parser.processDocument(text);
+            }
+
+            parser.updateModel();
+
+            parser.saveDataToFiles(outputFilename);
+
+            if (isExportOnly){
+                continue;
             }
 
             String summary = parser.generateSummary();
 
-
             PrintWriter out = null;
             try {
-                out = new PrintWriter(folderName.replace("/", "_") + ".txt");
+                String summaryFolderName = "summary_results";
+                File summaryFolder = new File(summaryFolderName);
+                if (!summaryFolder.exists()){
+                    summaryFolder.mkdir();
+                }
+
+                out = new PrintWriter(summaryFolderName + "/" + outputFilename + "_system.txt");
                 out.print(summary);
             } catch (FileNotFoundException ex) {
                 System.out.println(ex.getMessage());
@@ -190,12 +203,54 @@ public class Parser {
 
     }
 
+    public void processDocument(String text){
+        processor.processDocument(text);
+    }
+
+    public void processDocuments(File[] files, boolean isDucData){
+        DocumentProcessor processor = new DocumentProcessor(isDucData, indicatorMatrix);
+        try {
+            processor.processDocuments(files);
+            nounPhrases = processor.getNounPhrases();
+            verbPhrases = processor.getVerbPhrases();
+            allPhrases = processor.getAllPhrases();
+            corefs = processor.getCorefs();
+            nouns = processor.getNouns();
+            verbs = processor.getVerbs();
+            docs = processor.getDocs();
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    public void updateModel(){
+        nounPhrases = processor.getNounPhrases();
+        verbPhrases = processor.getVerbPhrases();
+        allPhrases = processor.getAllPhrases();
+        corefs = processor.getCorefs();
+        nouns = processor.getNouns();
+        verbs = processor.getVerbs();
+        docs = processor.getDocs();
+    }
+
+    public void saveDataToFiles(String documentSetName){
+        String statFolderName = "stats";
+        File statFolder = new File(statFolderName);
+        if (!statFolder.exists()){
+            statFolder.mkdir();
+        }
+
+        ModelExporter exporter = new ModelExporter(statFolderName, documentSetName);
+        exporter.savePhrasesToFile(allPhrases);
+        exporter.saveCoreferencesToFile(corefs);
+        exporter.saveIndicatorMatrixToFile(indicatorMatrix);
+        exporter.saveParagraphsToFile(docs);
+    }
+
     public String generateSummary(){
         System.out.println("Start scoring at " + System.currentTimeMillis());
         scorePhrases();
         System.out.println("Finish scoring at " + System.currentTimeMillis());
-
-        removeRedundantCorefs();
 
         printLog();
 
@@ -576,32 +631,9 @@ public class Parser {
         return calculateJaccardIndex(a, b);
     }
 
-    public void processDocument(String text) {
-        Document document = new Document(text);
-        this.docs.add(document);
-        extractPhrases(document);
-        this.corefs.putAll(document.getCoreferences());
-    }
-
-    public void extractPhrases(Document document){
-        PhraseExtractor extractor = new PhraseExtractor(document, indicatorMatrix);
-        List<Phrase> phrases = extractor.extractAllPhrases();
-
-        for (Phrase phrase : phrases) {
-            if (phrase.isNP()) {
-                nounPhrases.add(phrase);
-                nouns.add(phrase.getContent());
-            } else {
-                verbPhrases.add(phrase);
-                verbs.add(phrase.getContent());
-            }
-            allPhrases.add(phrase);
-        }
-    }
-
     public void scorePhrases(){
         int count = 0;
-        for(Document doc: this.docs){
+        for(InputDocument doc: this.docs){
             log("Scoring phrases againsts the doc_id " + count);
             PhraseScorer phraseScorer = new PhraseScorer(doc);
             for (Phrase phrase: allPhrases){
@@ -629,51 +661,6 @@ public class Parser {
             System.out.println(ex.getMessage());
             ex.printStackTrace();
             return "";
-        }
-    }
-
-    private void writePhrasesToFile(String filename, List<Phrase> phrases) {
-        PrintWriter out = null;
-        try {
-            out = new PrintWriter(filename);
-            for (Phrase phrase : phrases) {
-                out.println(phrase.getId() + ":"+ phrase.toString());
-            }
-        } catch (FileNotFoundException ex) {
-            System.out.println(ex.getMessage());
-        } finally {
-            out.close();
-        }
-    }
-
-    private void writeCorefsToFile(String filename, HashMap<String, HashSet<String>> corefs) {
-        PrintWriter out = null;
-        try {
-            out = new PrintWriter(filename);
-            for (String key : corefs.keySet()) {
-                for (String ref : corefs.get(key)) {
-                    out.println(ref);
-                }
-                out.println("");
-            }
-        } catch (FileNotFoundException ex) {
-            System.out.println(ex.getMessage());
-        } finally {
-            out.close();
-        }
-    }
-
-    private void writeNersToFile(String filename, HashSet<String> ners) {
-        PrintWriter out = null;
-        try {
-            out = new PrintWriter(filename);
-            for (String ner : ners) {
-                out.println(ner);
-            }
-        } catch (FileNotFoundException ex) {
-            System.out.println(ex.getMessage());
-        } finally {
-            out.close();
         }
     }
 
@@ -752,10 +739,6 @@ public class Parser {
         for(String key: corefs.keySet()){
             log(key + ": " + corefs.get(key).toString());
         }
-
-        for(String ner: namedEntities){
-            log(ner);
-        }
     }
     private void log(String text){
         System.out.println(text);
@@ -763,26 +746,5 @@ public class Parser {
 
     private void markTime(String text){
         System.out.println(new Timestamp(System.currentTimeMillis()) + ": " + text);
-    }
-
-    public void removeRedundantCorefs(){
-        Iterator<Map.Entry<String, HashSet<String>>> iter = corefs.entrySet().iterator();
-
-        while(iter.hasNext()){
-            Map.Entry<String, HashSet<String>> entry = iter.next();
-            Set<String> mentions = entry.getValue();
-            HashSet<String> newMentions = new HashSet<>(mentions);
-            for(String mention: mentions){
-                if (!nouns.contains(mention)){
-                    newMentions.remove(mention);
-                }
-            }
-
-            if (newMentions.size() < 2){
-                iter.remove();
-            }else{
-                entry.setValue(newMentions);
-            }
-        }
     }
 }

@@ -1,12 +1,5 @@
 package jaist.summarization;
 
-import edu.stanford.nlp.ling.CoreAnnotations;
-import edu.stanford.nlp.ling.CoreLabel;
-import edu.stanford.nlp.pipeline.Annotation;
-import edu.stanford.nlp.util.CollectionUtils;
-import edu.stanford.nlp.util.CoreMap;
-import edu.stanford.nlp.util.Pair;
-import intoxicant.analytics.coreNlp.StopwordAnnotator;
 import jaist.summarization.unit.Paragraph;
 import jaist.summarization.unit.Phrase;
 
@@ -16,15 +9,15 @@ import java.util.*;
  * Created by chientran on 9/29/15.
  */
 public class PhraseScorer {
-    Document document = null;
+    InputDocument inputDocument = null;
 
     Double B = 6.0;
     Double RHO = 0.5d;
 
     private static final String PARAGRAPH_SPLIT_REGEX = "(?m)(?=^\\s{4})";
 
-    public PhraseScorer(Document document){
-        this.document = document;
+    public PhraseScorer(InputDocument inputDocument){
+        this.inputDocument = inputDocument;
     }
 
     private Double weightingParagraph(Integer paragraphPosition){
@@ -38,7 +31,7 @@ public class PhraseScorer {
     public Double scorePhrase(Phrase phrase){
         Double score = 0.0d;
         Set<String> concepts = phrase.getConcepts();
-        List<Paragraph> paragraphs = document.getParagraphs();
+        List<Paragraph> paragraphs = inputDocument.getParagraphs();
         int paragraphLength = paragraphs.size();
 
         for(String concept: concepts){
